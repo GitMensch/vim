@@ -73,6 +73,7 @@ let s:pc_id = 12
 let s:asm_id = 13
 let s:break_id = 14  " breakpoint number is added to this
 let s:stopped = 1
+let s:wait = 1
 
 let s:parsing_disasm_msg = 0
 let s:asm_lines = []
@@ -512,7 +513,7 @@ func TermDebugSendCommand(cmd)
   endif
 endfunc
 
-" Send a command only when stopped.  Used for :Next and :Step.
+" Send a command only when stopped.
 func s:SendCommandIfStopped(cmd)
   if s:stopped
     call s:SendCommand(a:cmd)
@@ -521,9 +522,15 @@ func s:SendCommandIfStopped(cmd)
   endif
 endfunc
 
-" Function called when entering a line in the prompt buffer.
-func s:PromptCallback(text)
-  call s:SendCommand(a:text)
+" Send a command, but only execute when not on "wait" state.
+" Commonly used for commands that will resume the program (:Next, :Step, :Finish).
+func s:SendCommandWithWait(cmd)
+  if s:wait
+    call ch_log('dropping command, Termdebug is in wait state: ' . a:cmd)
+  else
+    let s:wait = 1
+    call s:SendCommand(a:cmd)
+  endif
 endfunc
 
 " Function called when pressing CTRL-C in the prompt buffer and when placing a
@@ -808,9 +815,9 @@ func s:InstallCommands()
 
   command -nargs=? Break call s:SetBreakpoint(<q-args>)
   command Clear call s:ClearBreakpoint()
-  command Step call s:SendCommandIfStopped('-exec-step')
-  command Over call s:SendCommandIfStopped('-exec-next')
-  command Finish call s:SendCommandIfStopped('-exec-finish')
+  command Step call s:SendCommandWithWait('-exec-step')
+  command Over call s:SendCommandWithWait('-exec-next')
+  command Finish call s:SendCommandWithWait('-exec-finish')
   command -nargs=* Run call s:Run(<q-args>)
   command -nargs=* Arguments call s:SendCommand('-exec-arguments ' . <q-args>)
 
@@ -1193,6 +1200,7 @@ func s:HandleCursor(msg)
   elseif a:msg =~ '^\*running'
     call ch_log('program running')
     let s:stopped = 0
+    let s:wait = 0
   endif
 
   if a:msg =~ 'fullname='
